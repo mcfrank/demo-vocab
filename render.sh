@@ -11,5 +11,5 @@ mv ../out/* .
 rm -r ../out
 git add .
 git commit -m "deployed to github pages"
-git push --force --quiet master:gh-pages
+git push --force --quiet origin gh-pages
 git checkout master
