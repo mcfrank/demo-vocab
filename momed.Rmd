@@ -1,6 +1,6 @@
 ---
 title: "Maternal Education Differences in Vocabulary Development"
-date: `r Sys.Date()`
+date: "`r Sys.Date()`"
 output:
   html_document:
     highlight: tango
