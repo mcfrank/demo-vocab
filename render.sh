@@ -5,8 +5,9 @@ mkdir out;
 
 R CMD BATCH render.R;
 
-cd out
+mv out ..
 git checkout gh-pages
+mv ../out/* .
 git add .
 git commit -m "deployed to github pages"
 git push --force --quiet master:gh-pages
