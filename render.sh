@@ -1,5 +1,6 @@
 #!/bin/bash
 
+cd /home/ubuntu/demo-vocab/
 rm -rf out || exit 0;
 mkdir out;
 
