@@ -20,30 +20,34 @@ library(ggplot2)
 library(directlabels)
 theme_set(theme_mikabr())
 font <- theme_mikabr()$text$family
-mode <- "local"
+mode <- "remote"
 ```
 
 Get administration data and filter to administrations of Words & Sentences that have momed coded.
 ```{r vocab_admins}
 vocab_admins <- get_administration_data(mode = mode) %>%
-  select(data_id, language, form, age, momed, production) %>%
-  filter(form == "WS", !is.na(momed))
+  select(data_id, language, form, age, mom_ed, production, comprehension) %>%
+  filter(form == "WG", !is.na(mom_ed))
 ```
 
 Get item information to find the number of items on each language's form.
 ```{r num_words}
 num_words <- get_item_data(mode = mode) %>%
-  filter(form == "WS", type == "word") %>%
+  filter(form == "WG", type == "word") %>%
   group_by(language) %>%
   summarise(n = n())
 ```
 
 Normalize productive vocabulary size as a proportion of items and calculate median vocabulary size for each language, momed level, and age.
+
 ```{r vocab_data}
 vocab_data <- vocab_admins %>%
   left_join(num_words) %>%
-  mutate(production = as.numeric(production) / n,
-         momed = `levels<-`(momed, list("None, Primary, Some Secondary" = "None",
+  mutate(production = as.numeric(production), 
+         comprehension = as.numeric(comprehension), 
+         production_prop = as.numeric(production) / n,
+         comprehension_prop = as.numeric(comprehension) / n,
+         mom_ed = `levels<-`(mom_ed, list("None, Primary, Some Secondary" = "None",
                                         "None, Primary, Some Secondary" = "Primary",
                                         "None, Primary, Some Secondary" = "Some Secondary",
                                         "Secondary" = "Secondary",
@@ -52,46 +56,41 @@ vocab_data <- vocab_admins %>%
                                         "Some Graduate" = "Some Graduate",
                                         "Graduate" = "Graduate")))
 
-overall_vocab_data <- vocab_data %>%
-  group_by(language, momed, age) %>%
-  summarise(median = median(production))
-
-cuts <- seq(0, 1, by = 0.25)
-percentile_vocab_data <- vocab_data %>%
-  group_by(language, momed, age) %>%
-  mutate(percentile = rank(production) / length(production),
-         quantile = cut(percentile, breaks = cuts))
+# overall_vocab_data <- vocab_data %>%
+#   group_by(language, mom_ed, age) %>%
+#   summarise(median = median(production))
+# 
+# cuts <- seq(0, 1, by = 0.25)
+# percentile_vocab_data <- vocab_data %>%
+#   group_by(language, mom_ed, age) %>%
+#   mutate(percentile = rank(production) / length(production),
+#          quantile = cut(percentile, breaks = cuts))
 ```
 
-Plot vocabulary size over age by momed.
-```{r plot_overall, fig.width=5, fig.height=9}
-ggplot(filter(overall_vocab_data, language != "Hebrew"),
-       aes(x = age, y = median, colour = momed, label = momed)) +
-  facet_grid(language ~ .) +
-  geom_jitter(size = 0.7) +
-  geom_smooth(se = FALSE, span = 1, method = "loess", size = 1) +
-  scale_colour_solarized(name = "") +
-  scale_x_continuous(breaks = seq(min(vocab_data$age), max(vocab_data$age), 2),
-                     limits = c(min(vocab_data$age), max(vocab_data$age) + 1),
-                     name = "\nAge (months)") +
-  scale_y_continuous(name = "Median Productive Vocabulary (proportion of total words)\n",
-                     limits = c(0,1)) +
-  theme(legend.position = "bottom",
-        legend.direction = "vertical")
-```
-
-Plot vocabulary size over age by momed and percentile.
-```{r plot_percentile, fig.width=12, fig.height=10}
-ggplot(filter(percentile_vocab_data, language != "Hebrew"),
-       aes(x = age, y = production, colour = momed, label = momed)) +
-  facet_grid(language ~ quantile) +
-  geom_jitter(size = 0.7, alpha = 0.7) +
-  geom_smooth(se = FALSE, span = 1, method = "loess", size = 1) +
-  scale_colour_solarized(name = "") +
-  scale_x_continuous(breaks = seq(min(vocab_data$age), max(vocab_data$age), 2),
-                     limits = c(min(vocab_data$age), max(vocab_data$age) + 1),
-                     name = "\nAge (months)") +
-  scale_y_continuous(name = "Productive Vocabulary (proportion of total words)\n",
-                     limits = c(0,1)) +
+```{r}
+ggplot(filter(vocab_data, 
+             language != "Hebrew", 
+             language != "British Sign Language"), 
+      aes(x = comprehension, y = production, col = mom_ed)) + 
+  facet_grid(. ~ language) + 
+  geom_point() + 
+  geom_smooth(method="lm", formula = y ~ I(x^2), se=FALSE) +
+  # geom_smooth(span = 1) + 
   theme(legend.position = "bottom")
 ```
+
+
+```{r}
+ggplot(filter(vocab_data, 
+             language != "Hebrew", 
+             language != "British Sign Language"), 
+      aes(x = comprehension, y = production, col = mom_ed)) + 
+  facet_grid(. ~ language) + 
+  geom_point() + 
+  # geom_smooth(method="lm", formula = y ~ I(x^2), se=FALSE) +
+  # geom_smooth(span = .75, se=FALSE) + 
+  theme(legend.position = "bottom") + 
+  xlim(c(0,100)) + 
+  ylim(c(0,50)) 
+```
+
