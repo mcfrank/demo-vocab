@@ -1,0 +1,115 @@
+---
+title: "Maternal Education Differences in Vocabulary Development"
+output:
+  html_document:
+    highlight: tango
+    theme: spacelab
+---
+
+```{r knitr, include=FALSE}
+library(knitr)
+opts_chunk$set(message = FALSE, warning = FALSE, cache=TRUE)
+```
+
+Load required libraries.
+```{r packages}
+library(wordbankr)
+library(langcog)
+library(dplyr)
+library(ggplot2)
+library(directlabels)
+theme_set(theme_mikabr())
+font <- theme_mikabr()$text$family
+mode <- "remote"
+```
+
+Get administration data and filter to administrations of Words & Sentences that have momed coded.
+```{r vocab_admins}
+vocab_admins <- get_administration_data(mode = mode) %>%
+  select(data_id, language, form, age, mom_ed, production, comprehension) %>%
+  filter(form == "WG", !is.na(mom_ed))
+```
+
+Get item information to find the number of items on each language's form.
+```{r num_words}
+num_words <- get_item_data(mode = mode) %>%
+  filter(form == "WG", type == "word") %>%
+  group_by(language) %>%
+  summarise(n = n())
+```
+
+Normalize productive vocabulary size as a proportion of items and calculate median vocabulary size for each language, momed level, and age.
+
+```{r vocab_data}
+vocab_data <- vocab_admins %>%
+  left_join(num_words) %>%
+  mutate(production = as.numeric(production), 
+         comprehension = as.numeric(comprehension), 
+         production_prop = as.numeric(production) / n,
+         comprehension_prop = as.numeric(comprehension) / n,
+         mom_ed = `levels<-`(mom_ed, list("None, Primary, Some Secondary" = "None",
+                                        "None, Primary, Some Secondary" = "Primary",
+                                        "None, Primary, Some Secondary" = "Some Secondary",
+                                        "Secondary" = "Secondary",
+                                        "Some College" = "Some College",
+                                        "College" = "College",
+                                        "Some Graduate" = "Some Graduate",
+                                        "Graduate" = "Graduate")))
+
+# overall_vocab_data <- vocab_data %>%
+#   group_by(language, mom_ed, age) %>%
+#   summarise(median = median(production))
+# 
+# cuts <- seq(0, 1, by = 0.25)
+# percentile_vocab_data <- vocab_data %>%
+#   group_by(language, mom_ed, age) %>%
+#   mutate(percentile = rank(production) / length(production),
+#          quantile = cut(percentile, breaks = cuts))
+```
+
+```{r}
+ms <- filter(vocab_data, 
+             language != "Hebrew", 
+             language != "British Sign Language") %>%
+  group_by(language, mom_ed, age) %>%
+  summarise(comprehension = median(comprehension), 
+            production = median(production))
+  
+ggplot(filter(vocab_data, 
+             language != "Hebrew", 
+             language != "British Sign Language"), 
+      aes(x = comprehension, y = production, col = mom_ed)) + 
+  facet_grid(. ~ language) + 
+  geom_point() + 
+  # geom_line(data = ms) +
+  # geom_smooth(method="lm", formula = y ~ I(x^2), se=FALSE) +
+  geom_smooth(span = 1, se=FALSE) + 
+  theme(legend.position = "bottom")
+```
+
+
+```{r}
+ggplot(filter(vocab_data, 
+             language != "Hebrew", 
+             language != "British Sign Language"), 
+      aes(x = comprehension, y = production, col = mom_ed)) + 
+  facet_grid(. ~ language) + 
+  geom_point() + 
+  # geom_smooth(method="lm", formula = y ~ I(x^2), se=FALSE) +
+  # geom_smooth(span = .75, se=FALSE) + 
+  theme(legend.position = "bottom") + 
+  xlim(c(0,100)) + 
+  ylim(c(0,50)) 
+```
+
+```{r}
+ggplot(filter(vocab_data, 
+             language != "Hebrew", 
+             language != "British Sign Language"), 
+      aes(x = age, y = comprehension, col = mom_ed)) + 
+  facet_grid(. ~ language) + 
+  geom_jitter() + 
+  geom_smooth(method="lm", formula = y ~ I(x^2), se=FALSE) + 
+  theme(legend.position = "bottom") 
+
+```

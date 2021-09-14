@@ -1,0 +1,51 @@
+---
+title: "Maternal Education Differences in Vocabulary Development"
+output:
+  html_document:
+    highlight: tango
+    theme: spacelab
+---
+
+```{r knitr, include=FALSE}
+library(knitr)
+opts_chunk$set(message = FALSE, warning = FALSE)
+```
+
+Load required libraries.
+```{r packages}
+library(wordbankr)
+library(langcog)
+library(dplyr)
+library(ggplot2)
+library(directlabels)
+theme_set(theme_mikabr())
+font <- theme_mikabr()$text$family
+mode <- "remote"
+```
+
+Get administration data and filter to administrations of Words & Sentences that have momed coded.
+
+```{r vocab_admins}
+vocab_admins <- get_administration_data(mode = mode) %>%
+  select(data_id, language, form, age, mom_ed, production, comprehension) %>%
+  filter(form == "WG")
+```
+
+Get item information to find the number of items on each language's form.
+
+```{r num_words}
+num_words <- get_item_data(mode = mode) %>%
+  filter(form == "WG", type == "word") %>%
+  group_by(language) %>%
+  summarise(n = n())
+```
+
+```{r}
+ggplot(vocab_admins, 
+       aes(x = age, y = production)) + 
+  geom_point() + 
+  facet_wrap(~language) + 
+  geom_smooth(method="lm", formula = y ~ I(x^2), se=FALSE) 
+# +
+  # geom_smooth(span = 1, se = FALSE) 
+```
