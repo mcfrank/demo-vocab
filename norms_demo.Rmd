@@ -1,0 +1,211 @@
+---
+title: "Maternal Education Differences in Vocabulary Development"
+output:
+  html_document:
+    highlight: tango
+    theme: spacelab
+---
+
+```{r knitr, include=FALSE}
+library(knitr)
+opts_chunk$set(message = FALSE, warning = FALSE)
+```
+
+Load required libraries.
+```{r packages}
+library(wordbankr)
+library(langcog)
+library(tidyverse)
+library(brms)
+library(forcats)
+library(survey)
+library(gamlss)
+theme_set(theme_mikabr())
+font <- theme_mikabr()$text$family
+```
+Read in Virginia's temp data from SPSS.
+
+Something is funky with webcdi, there are some kids with very high vocab. 
+
+```{r}
+ws <- haven::read_sav("data/Web_WS_2007norming.sav") |>
+  mutate(source = as_factor(sourcecat3way), 
+         race = haven::as_factor(ethnicity), 
+         sex = haven::as_factor(sex),
+         sex = fct_recode(sex, Male = "M", Female = "F"),
+         ethnicity = ifelse(as.character(child_hispanic_latino), 
+                            "hispanic", "non-hispanic")) |>
+  filter(Total_Produced <= 680, 
+         !is.na(race), 
+         !is.na(ethnicity))
+```
+
+Just check the data with some graphs. 
+
+```{r}
+ggplot(ws, aes(x = age, y = Total_Produced, col = race)) + 
+  geom_point(alpha = .1) + 
+  geom_smooth(method = "lm", span = 1, se = FALSE) + 
+  facet_wrap(~ethnicity)
+```
+
+Now let's fit the `gcrq` splines that we're used to. 
+
+```{r}
+library(quantregGrowth)
+gcrq_mod <- gcrq(formula = Total_Produced ~ ps(age, monotone = 1, lambda = 1000),
+                         tau = c(.1,.25,.5,.75,.9), data = ws)
+
+preds <- predict(gcrq_mod, newdata = data.frame(age = 16:30)) |>
+  as.data.frame() |>
+  mutate(age = 16:30) |>
+  pivot_longer(names_to = "level", values_to = "pred", 1:5)
+
+
+ggplot(ws,
+       aes(x = age, y = Total_Produced)) +
+  geom_jitter(width = .2, alpha = .1) +
+  geom_line(data = preds, aes(x = age, y = pred, col = level)) 
+```
+
+Let's try fitting a bayesian spline quantile regression model to the data. It totally works, though 1) 
+
+```{r vocab_data}
+
+mod <- brm(bf(Total_Produced ~ s(age, bs="ps", sp = 100000), quantile = .5),
+           data = ws,
+           family = asym_laplace(), 
+           cores = 4)
+
+fitted <- fitted(mod, dpar="mu")
+ws$fitted <- fitted[,"Estimate"]
+
+mod_1 <- brm(bf(Total_Produced ~ s(age, bs="ps", sp = 100000), quantile = .1),
+           data = ws,
+           family = asym_laplace(), 
+           cores = 4)
+
+fitted_1 <- fitted(mod_1, dpar="mu")
+ws$fitted_1 <- fitted_1[,"Estimate"]
+
+mod_9 <- brm(bf(Total_Produced ~ s(age, bs="ps", sp = 100000), quantile = .9),
+           data = ws,
+           family = asym_laplace(), 
+           cores = 4)
+
+fitted_9 <- fitted(mod_9, dpar="mu")
+ws$fitted_9 <- fitted_9[,"Estimate"]
+
+ggplot(ws,
+       aes(x = age, y = Total_Produced)) +
+  geom_jitter(width = .2, alpha = .1) +
+  geom_line(aes(y = fitted), col = "darkgreen") + 
+    geom_line(aes(y = fitted_1), col = "darkblue") + 
+    geom_line(aes(y = fitted_9), col = "red") + 
+  geom_line(aes(y = fitted))
+
+
+```
+Now survey weighting. 
+
+```{r}
+ws_minimal <- dplyr::select(ws, age,
+                     Total_Produced, sex, race, ethnicity)
+
+ws_unweighted <- svydesign(ids = ~1, data = ws_minimal)
+
+# numbers somewhat sloppily scraped from from 2020 census
+race_dist <- data.frame(race = c("White", "Mixed/other", "Asian", 
+                                "Black", "No ethnicity reported"),
+                       freq = nrow(ws_unweighted) * c(0.616, 0.188, .060, .124, 0.01))
+
+ethnicity_dist <- data.frame(ethnicity = c("hispanic", "non-hispanic"),
+                       freq = nrow(ws_unweighted) * c(0.187, 0.813))
+
+
+# Here we use the rake function in the survey package to weight the current data by the population values for each of the variables included in the dataset.
+
+ws_raked <- rake(design = ws_unweighted,
+                 sample.margins = list(~race, ~ethnicity),
+                 population.margins = list(race_dist, ethnicity_dist))
+
+# Finally, because the weights can become either too large or too small, we can put limits on the weights using the trimWeights function. In this example, we limit the weights to .3 to 3 (i.e. 3 means a value being counted three times as much as its original value).
+
+# Then we can get the weighted means by using the svymean function. We can then compare these means with the original means to evaluate the changes the weights played.
+ws_raked_trimmed <- trimWeights(ws_raked, lower=0.3, upper=3, strict=TRUE)
+
+svymean(~Total_Produced, ws_raked)
+svymean(~Total_Produced, ws_raked_trimmed)
+svymean(~Total_Produced, ws_unweighted)
+```
+
+Add these weights to the quantile regression.
+
+```{r}
+ws$race_ethnicity_weights <- weights(ws_raked)
+mod <- brm(bf(Total_Produced | weights(race_ethnicity_weights) ~ s(age, bs="ps", sp = 100000), 
+              quantile = .5),
+           data = ws,
+           family = asym_laplace(), 
+           cores = 4)
+
+fitted <- fitted(mod, dpar="mu")
+ws$fitted <- fitted[,"Estimate"]
+
+mod_1 <- brm(bf(Total_Produced | weights(race_ethnicity_weights)  ~ s(age, bs="ps", sp = 100000), quantile = .1),
+           data = ws,
+           family = asym_laplace(), 
+           cores = 4)
+
+fitted_1 <- fitted(mod_1, dpar="mu")
+ws$fitted_1 <- fitted_1[,"Estimate"]
+
+mod_9 <- brm(bf(Total_Produced | weights(race_ethnicity_weights)  ~ s(age, bs="ps", sp = 100000), quantile = .9),
+           data = ws,
+           family = asym_laplace(), 
+           cores = 4)
+
+fitted_9 <- fitted(mod_9, dpar="mu")
+ws$fitted_9 <- fitted_9[,"Estimate"]
+
+ggplot(ws,
+       aes(x = age, y = Total_Produced)) +
+  geom_jitter(width = .2, alpha = .1) +
+  geom_line(aes(y = fitted), col = "darkgreen") + 
+    geom_line(aes(y = fitted_1), col = "darkblue") + 
+    geom_line(aes(y = fitted_9), col = "red") + 
+  geom_line(aes(y = fitted))
+```
+
+# GAMLSS Sketch
+
+```{r}
+ws_gam <- ws_minimal |>
+  mutate(prop_produced = as.numeric(Total_Produced / 680), 
+         race_ethnicity_weights = weights(ws_raked), 
+         age = as.numeric(age)) |>
+  filter(prop_produced < 1) 
+
+
+gam_mod <- gamlss(prop_produced ~ pbm(age, lambda = 10000), 
+                  sigma.formula = ~ pbm(age, lambda = 10000),
+                  weights = race_ethnicity_weights,
+                  family = BE,
+                  data = ws_gam)
+
+cents <- centiles.pred(gam_mod, cent = c(10,25, 50, 75, 90), 
+                       xname = "age", xvalues = 16:30) |>
+  tibble() |>
+  pivot_longer(2:6, names_to = "percentile", values_to = "pred")
+
+
+ggplot(ws_gam, aes(x = age, y = prop_produced * 680)) + 
+  geom_jitter(width = .2, alpha = .1) +
+  geom_line(data = cents, aes(x = x, y = pred * 680, col = percentile)) +
+  xlab("Age (months)") + 
+  ylab("Proportion Producing") + 
+  # theme(legend.position = "bottom") + 
+  scale_color_solarized(name = "Percentile")
+```
+
+

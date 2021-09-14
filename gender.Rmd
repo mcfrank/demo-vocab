@@ -1,10 +1,15 @@
 ---
 title: "Gender Differences in Vocabulary Development"
+date: "`r Sys.Date()`"
 output:
   html_document:
     highlight: tango
     theme: spacelab
 ---
+
+This analysis examines how vocabulary development differs by children's reported gender, replicating the results of:
+
+Eriksson, M., Marschik, P. B., Tulviste, T., Almgren, M., Pérez Pereira, M., Wehberg, S., ... Gallego, C. (2012). Differences between girls and boys in emerging language skills: Evidence from 10 language communities. British Journal of Developmental Psychology 30, 326–343.
 
 ```{r knitr, include=FALSE}
 library(knitr)
